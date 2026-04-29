@@ -50,6 +50,8 @@ ignore = [
     "RUF003",
     # "Yoda condition" suggestions reverse natural-reading comparisons.
     "SIM300",
+    # FastAPI uses File()/Form()/Depends() as parameter defaults (its Pythonic API).
+    "B008",
 ]
 
 [tool.pytest.ini_options]
