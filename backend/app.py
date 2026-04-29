@@ -190,6 +190,29 @@ def landmarks_to_pose_payload(landmarks) -> list[list[list[float]]]:
 # FastAPI app
 # ---------------------------------------------------------------------------
 
+@app.function(schedule=modal.Period(minutes=4))
+def warm_keep() -> None:
+    """Periodic no-op so the analyze container stays warm during demo windows.
+    Modal scales analyze containers to zero on inactivity; this scheduled
+    function ensures at least one is up. Cheap (a few CPU-seconds every 4
+    min) and avoids 30s cold-starts during live judging."""
+    import contextlib
+    import os as _os
+    import urllib.error
+    import urllib.request
+
+    base = _os.environ.get("MIMICCOACH_PUBLIC_URL")
+    if not base:
+        # No public URL yet — silent no-op (the schedule still runs but does
+        # nothing actionable). Set MIMICCOACH_PUBLIC_URL in the Modal app's
+        # env once `modal deploy` returns the asgi URL.
+        return
+    # Best-effort: a transient blip shouldn't keep the schedule from firing
+    # again in 4 minutes.
+    with contextlib.suppress(urllib.error.URLError):
+        urllib.request.urlopen(f"{base}/healthz", timeout=15).read(64)
+
+
 @app.function(timeout=300, max_containers=4)
 @modal.asgi_app()
 def fastapi_app():
