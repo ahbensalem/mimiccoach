@@ -34,7 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("ffmpeg", "libgl1", "libglib2.0-0")  # mediapipe + opencv runtime
+    .apt_install("ffmpeg", "libgl1", "libglib2.0-0", "curl")
     .pip_install(
         "mediapipe>=0.10.18",
         "numpy>=1.26,<2.2",
@@ -47,10 +47,18 @@ image = (
         "python-multipart>=0.0.12",
         "scipy>=1.13",
     )
+    # MediaPipe's Tasks API (the supported path; the legacy `solutions` module
+    # is being removed in current builds) needs a `.task` model bundle on disk.
+    # Bake it into the image so cold-starts don't pay the download cost.
+    .run_commands(
+        "curl -fsSL -o /opt/pose_landmarker.task "
+        "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
+        "pose_landmarker_full/float16/latest/pose_landmarker_full.task"
+    )
+    .env({"MEDIAPIPE_MODEL_PATH": "/opt/pose_landmarker.task"})
     .add_local_python_source("pipeline", "qdrant_io")
     # add_local_python_source ships .py files only; motions.yaml is a sibling
-    # data file segment.py reads at request time, so it has to be added
-    # explicitly. Lands at /root/pipeline/ to match the Python source layout.
+    # data file segment.py reads at request time, so add it explicitly.
     .add_local_file(
         str(Path(__file__).parent / "pipeline" / "motions.yaml"),
         "/root/pipeline/motions.yaml",
