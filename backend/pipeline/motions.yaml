@@ -1,0 +1,140 @@
+# Phase definitions for each supported motion.
+#
+# Each motion lists its phases in chronological order, the key joint(s) used to
+# segment between phases, and the segmentation rule (vertical-velocity zero
+# crossing, angular-velocity zero crossing, or peak detection).
+#
+# `key_joints` references MediaPipe Pose Landmarker landmark names (see
+# pipeline/skeleton_map.py for the canonical list).
+#
+# This file is the schema-of-truth — segment.py reads it directly.
+
+motions:
+
+  tennis_serve:
+    sport: tennis
+    label: "Tennis serve"
+    is_hero: true
+    phases:
+      - name: stance
+        boundary: clip_start
+      - name: toss
+        boundary: tossing_arm_wrist_y_peak       # left wrist apex (right-handed)
+      - name: trophy
+        boundary: hitting_arm_elbow_angle_min    # back-elbow flex max
+      - name: contact
+        boundary: hitting_arm_wrist_y_peak       # racket-arm wrist apex
+      - name: follow_through
+        boundary: clip_end
+    key_joints: [left_wrist, right_wrist, right_elbow, right_shoulder]
+
+  tennis_forehand:
+    sport: tennis
+    label: "Tennis forehand"
+    phases:
+      - name: ready
+        boundary: clip_start
+      - name: take_back
+        boundary: hitting_arm_wrist_x_velocity_zero_neg   # racket goes back
+      - name: forward_swing
+        boundary: hitting_arm_wrist_x_velocity_zero_pos   # racket reverses forward
+      - name: contact
+        boundary: hitting_arm_wrist_x_velocity_peak
+      - name: follow_through
+        boundary: clip_end
+    key_joints: [right_wrist, right_shoulder, left_shoulder]
+
+  tennis_backhand:
+    sport: tennis
+    label: "Tennis backhand"
+    phases:
+      - name: ready
+        boundary: clip_start
+      - name: take_back
+        boundary: hitting_arm_wrist_x_velocity_zero_neg
+      - name: forward_swing
+        boundary: hitting_arm_wrist_x_velocity_zero_pos
+      - name: contact
+        boundary: hitting_arm_wrist_x_velocity_peak
+      - name: follow_through
+        boundary: clip_end
+    key_joints: [right_wrist, left_wrist, right_shoulder, left_shoulder]
+
+  fitness_squat:
+    sport: fitness
+    label: "Barbell back squat"
+    phases:
+      - name: setup
+        boundary: clip_start
+      - name: descent
+        boundary: hip_y_velocity_zero_pos        # hips start moving down
+      - name: bottom
+        boundary: hip_y_velocity_zero_neg        # hips reach lowest point
+      - name: ascent
+        boundary: hip_y_velocity_zero_pos_2nd    # hips reverse upward
+      - name: lockout
+        boundary: clip_end
+    key_joints: [left_hip, right_hip, left_knee, right_knee]
+
+  fitness_bench_press:
+    sport: fitness
+    label: "Bench press"
+    phases:
+      - name: unrack
+        boundary: clip_start
+      - name: descent
+        boundary: wrist_y_velocity_zero_pos      # bar starts coming down
+      - name: touch
+        boundary: wrist_y_velocity_zero_neg      # bar at chest
+      - name: ascent
+        boundary: wrist_y_velocity_zero_pos_2nd  # bar reverses up
+      - name: lockout
+        boundary: clip_end
+    key_joints: [left_wrist, right_wrist, left_elbow, right_elbow]
+
+  fitness_bent_over_row:
+    sport: fitness
+    label: "Bent-over row"
+    phases:
+      - name: hinge
+        boundary: clip_start
+      - name: pull
+        boundary: wrist_y_velocity_zero_neg      # bar starts moving up toward torso
+      - name: contraction
+        boundary: wrist_y_velocity_zero_pos      # bar reaches torso
+      - name: eccentric
+        boundary: wrist_y_velocity_zero_neg_2nd  # bar reverses back down
+      - name: reset
+        boundary: clip_end
+    key_joints: [left_wrist, right_wrist, left_elbow, right_elbow]
+
+  golf_swing:
+    sport: golf
+    label: "Golf full swing"
+    phases:
+      - name: address
+        boundary: clip_start
+      - name: backswing
+        boundary: hand_y_velocity_zero_pos       # club starts upward
+      - name: top
+        boundary: hand_y_velocity_zero_neg       # club at top
+      - name: downswing
+        boundary: hand_y_velocity_zero_pos_2nd   # club reverses down
+      - name: impact
+        boundary: hand_x_velocity_peak           # club through ball
+      - name: finish
+        boundary: clip_end
+    key_joints: [left_wrist, right_wrist, left_shoulder, right_shoulder]
+
+
+# ----------------------------------------------------------------------------
+# Body-type bucketing.
+# Computed once per clip on a "neutral" frame (first frame after warmup).
+# ratio = shoulder_distance / hip_distance
+# ----------------------------------------------------------------------------
+body_type:
+  ratio_thresholds:
+    narrow: 1.05      # ratio < 1.05  -> narrow
+    balanced: 1.15    # 1.05 <= ratio < 1.15 -> balanced
+                      # ratio >= 1.15 -> broad
+  buckets: [narrow, balanced, broad]
