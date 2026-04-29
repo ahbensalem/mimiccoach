@@ -20,6 +20,14 @@ from typing import Any
 
 import modal
 
+# FastAPI types must be importable at module scope so `from __future__ import
+# annotations` doesn't trip pydantic's forward-reference resolution on the
+# /analyze handler's `video: UploadFile` parameter. Importing them here is
+# safe both locally (fastapi is in the dev venv) and inside the Modal image
+# (fastapi[standard] is pip_installed in `image` below).
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+
 # ---------------------------------------------------------------------------
 # Image
 # ---------------------------------------------------------------------------
@@ -40,6 +48,13 @@ image = (
         "scipy>=1.13",
     )
     .add_local_python_source("pipeline", "qdrant_io")
+    # add_local_python_source ships .py files only; motions.yaml is a sibling
+    # data file segment.py reads at request time, so it has to be added
+    # explicitly. Lands at /root/pipeline/ to match the Python source layout.
+    .add_local_file(
+        str(Path(__file__).parent / "pipeline" / "motions.yaml"),
+        "/root/pipeline/motions.yaml",
+    )
 )
 
 app = modal.App("mimiccoach", image=image)
@@ -190,7 +205,7 @@ def landmarks_to_pose_payload(landmarks) -> list[list[list[float]]]:
 # FastAPI app
 # ---------------------------------------------------------------------------
 
-@app.function(schedule=modal.Period(minutes=4))
+@app.function(schedule=modal.Period(minutes=4), secrets=[modal.Secret.from_name("qdrant"), modal.Secret.from_name("mimiccoach-warm")])
 def warm_keep() -> None:
     """Periodic no-op so the analyze container stays warm during demo windows.
     Modal scales analyze containers to zero on inactivity; this scheduled
@@ -213,12 +228,9 @@ def warm_keep() -> None:
         urllib.request.urlopen(f"{base}/healthz", timeout=15).read(64)
 
 
-@app.function(timeout=300, max_containers=4)
+@app.function(timeout=300, max_containers=4, secrets=[modal.Secret.from_name("qdrant")])
 @modal.asgi_app()
 def fastapi_app():
-    from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-    from fastapi.middleware.cors import CORSMiddleware
-
     web = FastAPI(title="MimicCoach")
 
     web.add_middleware(
