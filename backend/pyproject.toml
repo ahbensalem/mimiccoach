@@ -48,6 +48,8 @@ ignore = [
     "RUF001",
     "RUF002",
     "RUF003",
+    # "Yoda condition" suggestions reverse natural-reading comparisons.
+    "SIM300",
 ]
 
 [tool.pytest.ini_options]
