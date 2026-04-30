@@ -65,3 +65,8 @@ coverage/
 .coverage
 htmlcov/
 vars.md
+
+# Screenshots / scratch
+Screenshot*.png
+Screenshot*.jpg
+*.scratch

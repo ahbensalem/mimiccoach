@@ -1,5 +1,10 @@
 """Synthetic reference library generator.
 
+Also exposes `landmarks_for_entry(entry_id)` so the live `/analyze`
+handler can ship the matched pro's pose JSON back to the frontend
+overlay (we don't store landmarks in the Qdrant payload — they'd
+balloon storage 100×). Reproduces clip[id] deterministically.
+
 Produces a deterministic set of MediaPipe-33 pose sequences spanning all
 seven motions, with parametric variation (timing, amplitude, body
 proportions, handedness). The generator runs the same P1+P2 pipeline
@@ -23,6 +28,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 import numpy as np
@@ -30,6 +36,8 @@ import numpy as np
 from pipeline.embed import HandCraftedEmbedder, phase_tokens
 from pipeline.segment import segment_video
 from pipeline.skeleton_map import MP_INDEX
+
+DEFAULT_FPS: float = 30.0
 
 # ---------------------------------------------------------------------------
 # Body templates: vary shoulder/hip widths so body_type distributions are real.
@@ -268,22 +276,56 @@ SYNTHETIC_ATHLETE_NAMES: dict[str, list[str]] = {
 }
 
 
+@lru_cache(maxsize=1)
+def _all_landmarks(seed: int = 1729) -> dict[int, tuple[np.ndarray, str]]:
+    """Cache every synthetic clip's landmarks by id, computed once.
+
+    Identical iteration order + rng state to `generate()`, so the cached
+    landmarks are bit-identical to what produced the embeddings stored
+    in Qdrant. Used by `landmarks_for_entry()` to ship the matched pro's
+    pose JSON back through `/analyze`.
+    """
+    rng = np.random.default_rng(seed)
+    out: dict[int, tuple[np.ndarray, str]] = {}
+    next_id = 1
+    for plan in PLANS:
+        for body in BODY_TEMPLATES:
+            for i, T in enumerate(plan.durations):
+                skill = (0.30, 0.55, 0.80, 0.45, 0.85, 0.65)[i % 6]
+                clip = plan.make(body, T, skill=skill, rng=rng)
+                out[next_id] = (clip, plan.motion)
+                next_id += 1
+    return out
+
+
+def landmarks_for_entry(entry_id: int) -> tuple[np.ndarray, str, float] | None:
+    """Recreate landmarks + motion + fps for a synthetic library id.
+
+    Returns None for unknown / non-synthetic ids.
+    """
+    info = _all_landmarks().get(entry_id)
+    if info is None:
+        return None
+    clip, motion = info
+    return clip, motion, DEFAULT_FPS
+
+
 def generate(seed: int = 1729) -> Iterator[SyntheticEntry]:
     """Yield synthetic SyntheticEntry rows covering all 7 motions.
 
     The output is deterministic for a given seed — same id, same phase
     tokens, same payload across runs.
     """
-    rng = np.random.default_rng(seed)
     embedder = HandCraftedEmbedder()
+    landmarks_by_id = _all_landmarks(seed)
     next_id = 1
     for plan in PLANS:
         for body in BODY_TEMPLATES:
             for i, T in enumerate(plan.durations):
-                # Vary skill by a coarse 3-point distribution so each motion has
-                # at least one of each skill_level represented per body.
                 skill = (0.30, 0.55, 0.80, 0.45, 0.85, 0.65)[i % 6]
-                clip = plan.make(body, T, skill=skill, rng=rng)
+                clip, motion_key = landmarks_by_id[next_id]
+                assert motion_key == plan.motion, "landmark cache desync"
+                _ = T  # T is encoded in clip.shape[0]; loop var kept for clarity
 
                 boundaries = segment_video(clip, motion=plan.motion)
                 per_frame = embedder.embed_frames(clip)

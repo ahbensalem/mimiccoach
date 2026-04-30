@@ -178,6 +178,25 @@ def analyze_from_landmarks(
     top = matches[0]
     coaching = coach_from_per_phase(motion, top.per_phase_scores, names)
 
+    # If the matched clip is from the synthetic library, regenerate its pose
+    # JSON server-side so the frontend overlay can animate the pro skeleton
+    # without a real reference video URL.
+    match_pose = None
+    match_fps = None
+    if top.payload.get("source") == "synthetic":
+        from reference.synthetic import landmarks_for_entry
+
+        try:
+            entry_id = int(top.point_id)
+        except (TypeError, ValueError):
+            entry_id = None
+        if entry_id is not None:
+            info = landmarks_for_entry(entry_id)
+            if info is not None:
+                pro_landmarks, _, pro_fps = info
+                match_pose = pro_landmarks.tolist()
+                match_fps = pro_fps
+
     response["match"] = {
         "point_id": str(top.point_id),
         "score": top.score,
@@ -187,6 +206,8 @@ def analyze_from_landmarks(
         "body_type": top.payload.get("body_type"),
         "pose_url": top.payload.get("pose_url"),
         "video_url": top.payload.get("video_url"),
+        "pose": match_pose,
+        "fps": match_fps,
     }
     response["per_phase_scores"] = [
         {"phase": name, "score": float(score)}

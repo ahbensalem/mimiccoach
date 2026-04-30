@@ -5,7 +5,18 @@ import { useEffect, useMemo, useState } from "react";
 import { CoachingTip } from "./CoachingTip";
 import { PhaseScores } from "./PhaseScores";
 import { SplitVideo } from "./SplitVideo";
-import type { AnalyzeResponse } from "@/lib/types";
+import type { AnalyzeResponse, PhaseWindow } from "@/lib/types";
+
+function equalPartitionPhases(totalFrames: number, n: number): PhaseWindow[] {
+  if (n <= 0 || totalFrames <= 0) return [];
+  const out: PhaseWindow[] = [];
+  for (let i = 0; i < n; i++) {
+    const start = Math.floor((i / n) * totalFrames);
+    const end = Math.floor(((i + 1) / n) * totalFrames);
+    out.push({ name: `p${i + 1}`, start_frame: start, end_frame: Math.max(end, start + 1) });
+  }
+  return out;
+}
 
 export function AnalysisResult({
   result,
@@ -25,11 +36,16 @@ export function AnalysisResult({
   }, [userVideo]);
 
   const userFps = result.user.fps ?? 30;
-  const proFps = result.user.fps ?? 30;  // pro fps lives in payload eventually
+  const proFps = result.match?.fps ?? userFps;
   const userPhases = result.user.phases ?? [];
-  // Until we have stored pro pose JSON, mirror the user's phase windows so the
-  // skeleton overlay still shows phase coloring on the pro side when available.
-  const proPhases = userPhases;
+  // For the pro side we don't have segmented phase windows from the backend
+  // yet, but the pro pose array runs at proFps; equal-partition its frame
+  // count into the same number of phases as the user so the color coding
+  // advances at proportional progress on both sides.
+  const proPoses = result.match?.pose ?? null;
+  const proPhases = proPoses
+    ? equalPartitionPhases(proPoses.length, userPhases.length || 5)
+    : userPhases;
 
   const score = result.match?.score ?? 0;
   const detected = result.user.detected_frames;
@@ -74,7 +90,7 @@ export function AnalysisResult({
         }}
         pro={{
           videoUrl: result.match?.video_url ?? null,
-          poses: null,  // pro pose JSON URL lands in P3
+          poses: proPoses,
           phases: proPhases,
           fps: proFps,
           label: result.match?.athlete ? `Pro · ${result.match.athlete}` : "Pro",

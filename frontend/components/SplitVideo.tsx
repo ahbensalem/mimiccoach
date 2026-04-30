@@ -15,22 +15,23 @@ interface Side {
 }
 
 /**
- * Two synchronized <video> elements (user + pro) with MediaPipe skeletons
- * drawn on top via <SkeletonCanvas>. The user-side video drives the shared
- * scrubber; the pro side rate-aligns to the same normalized progress.
- *
- * If the pro side has no video URL, we render a skeleton-only animation
- * (driven by a hidden internal clock at the user's fps).
+ * Two synchronized panels (user + pro) with MediaPipe skeletons. The user
+ * side has a real <video>; the pro side either has its own video URL (real
+ * reference data) or animates a skeleton-only panel using the matched
+ * synthetic pro's landmarks. Both skeletons are driven from the user
+ * video's currentTime so the per-phase coloring on both sides advances
+ * together — that's the demo's side-by-side moment.
  */
 export function SplitVideo({ user, pro }: { user: Side; pro: Side }) {
   const userRef = useRef<HTMLVideoElement>(null);
   const proRef = useRef<HTMLVideoElement>(null);
+  const userPanelRef = useRef<HTMLDivElement>(null);
+  const proPanelRef = useRef<HTMLDivElement>(null);
   const [duration, setDuration] = useState(1);
   const [t, setT] = useState(0);
 
-  // Sync the pro video's currentTime to a fraction of its duration matching
-  // the user's normalized progress, so phase-to-phase comparison lines up
-  // even when the two clips have different lengths.
+  // Sync the pro <video> (when present) to the user's progress fraction so
+  // clips of different lengths still phase-line up.
   useEffect(() => {
     const u = userRef.current;
     if (!u) return;
@@ -52,7 +53,6 @@ export function SplitVideo({ user, pro }: { user: Side; pro: Side }) {
     };
   }, []);
 
-  // Mirror play/pause from user → pro.
   useEffect(() => {
     const u = userRef.current;
     const p = proRef.current;
@@ -72,12 +72,99 @@ export function SplitVideo({ user, pro }: { user: Side; pro: Side }) {
     if (u) u.currentTime = value;
   }
 
+  // Pro-side clock: maps the user's progress to a time inside the pro pose
+  // array's own duration, so the pro skeleton animates in sync without a
+  // pro video element.
+  const proDuration = pro.poses ? pro.poses.length / Math.max(1, pro.fps) : 0;
+  const userDurationRef = useRef(duration);
+  userDurationRef.current = duration;
+  const userTimeRef = useRef(t);
+  userTimeRef.current = t;
+  function proCurrentTime(): number {
+    const ud = userDurationRef.current;
+    const ut = userTimeRef.current;
+    if (ud <= 0 || proDuration <= 0) return 0;
+    return Math.min(proDuration - 0.001, (ut / ud) * proDuration);
+  }
+
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <SidePanel side={user} videoRef={userRef} />
-        <SidePanel side={pro} videoRef={proRef} />
+        <div className="space-y-1">
+          <div className="text-xs uppercase tracking-widest text-ink/50">{user.label}</div>
+          <div
+            ref={userPanelRef}
+            className="relative aspect-[9/16] overflow-hidden rounded-2xl border border-ink/10 bg-ink md:aspect-video"
+          >
+            {user.videoUrl ? (
+              <video
+                ref={userRef}
+                src={user.videoUrl}
+                playsInline
+                muted
+                className="h-full w-full object-contain"
+              />
+            ) : null}
+            {user.poses && user.phases.length ? (
+              <SkeletonCanvas
+                poses={user.poses}
+                fps={user.fps}
+                phases={user.phases}
+                containerRef={userPanelRef}
+                videoRef={userRef}
+              />
+            ) : null}
+          </div>
+          {user.caption ? <p className="text-xs text-ink/60">{user.caption}</p> : null}
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-xs uppercase tracking-widest text-ink/50">{pro.label}</div>
+          <div
+            ref={proPanelRef}
+            className="relative aspect-[9/16] overflow-hidden rounded-2xl border border-ink/10 bg-gradient-to-br from-ink to-ink/80 md:aspect-video"
+          >
+            {pro.videoUrl ? (
+              <video
+                ref={proRef}
+                src={pro.videoUrl}
+                playsInline
+                muted
+                className="h-full w-full object-contain"
+              />
+            ) : pro.poses ? (
+              <div className="absolute bottom-3 left-3 z-10 rounded-full bg-canvas/15 px-3 py-1 text-[11px] uppercase tracking-widest text-canvas/80 backdrop-blur">
+                Synthetic reference · pose only
+              </div>
+            ) : (
+              <div className="flex h-full w-full items-center justify-center px-4 text-center text-xs text-canvas/60">
+                Pro reference clip lands once the library is built (P3).
+              </div>
+            )}
+            {pro.poses && pro.phases.length ? (
+              pro.videoUrl ? (
+                <SkeletonCanvas
+                  poses={pro.poses}
+                  fps={pro.fps}
+                  phases={pro.phases}
+                  containerRef={proPanelRef}
+                  videoRef={proRef}
+                />
+              ) : (
+                <SkeletonCanvas
+                  poses={pro.poses}
+                  fps={pro.fps}
+                  phases={pro.phases}
+                  containerRef={proPanelRef}
+                  currentTimeFn={proCurrentTime}
+                />
+              )
+            ) : null}
+          </div>
+          {pro.caption ? <p className="text-xs text-ink/60">{pro.caption}</p> : null}
+        </div>
       </div>
+
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -104,48 +191,6 @@ export function SplitVideo({ user, pro }: { user: Side; pro: Side }) {
           {t.toFixed(2)}s
         </span>
       </div>
-    </div>
-  );
-}
-
-function SidePanel({
-  side,
-  videoRef,
-}: {
-  side: Side;
-  videoRef: React.RefObject<HTMLVideoElement | null>;
-}) {
-  return (
-    <div className="space-y-1">
-      <div className="text-xs uppercase tracking-widest text-ink/50">{side.label}</div>
-      <div className="relative aspect-[9/16] overflow-hidden rounded-2xl border border-ink/10 bg-ink md:aspect-video">
-        {side.videoUrl ? (
-          <video
-            ref={videoRef}
-            src={side.videoUrl}
-            playsInline
-            muted
-            className="h-full w-full object-contain"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center px-4 text-center text-xs text-canvas/60">
-            Pro reference clip lands once the library is built (P3).
-            <br />
-            The retrieval and per-phase scoring are live below.
-          </div>
-        )}
-        {side.poses && side.phases.length && side.videoUrl ? (
-          <SkeletonCanvas
-            poses={side.poses}
-            fps={side.fps}
-            phases={side.phases}
-            videoRef={videoRef}
-          />
-        ) : null}
-      </div>
-      {side.caption ? (
-        <p className="text-xs text-ink/60">{side.caption}</p>
-      ) : null}
     </div>
   );
 }

@@ -46,6 +46,12 @@ export interface MatchInfo {
   body_type: BodyType | null;
   pose_url: string | null;
   video_url: string | null;
+  /** Inline pose JSON for the matched pro clip — present for synthetic
+   *  library matches and (eventually) for real reference clips that ship
+   *  a pose blob. (T, 33, 4) per-frame landmarks. */
+  pose: number[][][] | null;
+  /** fps of the inlined `pose` array. */
+  fps: number | null;
 }
 
 export interface PhaseScore {
