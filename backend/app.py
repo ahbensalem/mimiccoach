@@ -64,7 +64,7 @@ image = (
         "pose_landmarker_full/float16/latest/pose_landmarker_full.task"
     )
     .env({"MEDIAPIPE_MODEL_PATH": "/opt/pose_landmarker.task"})
-    .add_local_python_source("pipeline", "qdrant_io")
+    .add_local_python_source("pipeline", "qdrant_io", "reference")
     # add_local_python_source ships .py files only; motions.yaml is a sibling
     # data file segment.py reads at request time, so add it explicitly.
     .add_local_file(
