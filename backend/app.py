@@ -178,24 +178,32 @@ def analyze_from_landmarks(
     top = matches[0]
     coaching = coach_from_per_phase(motion, top.per_phase_scores, names)
 
-    # If the matched clip is from the synthetic library, regenerate its pose
-    # JSON server-side so the frontend overlay can animate the pro skeleton
-    # without a real reference video URL.
+    # If we have pose data for the matched clip on hand (synthetic clips
+    # regenerate it on the fly; golfdb clips reload from a per-id .npz cache
+    # baked alongside the manifest), ship it so the frontend overlay can
+    # animate the pro skeleton without needing a real reference video URL.
     match_pose = None
     match_fps = None
-    if top.payload.get("source") == "synthetic":
-        from reference.synthetic import landmarks_for_entry
+    try:
+        entry_id = int(top.point_id)
+    except (TypeError, ValueError):
+        entry_id = None
 
-        try:
-            entry_id = int(top.point_id)
-        except (TypeError, ValueError):
-            entry_id = None
-        if entry_id is not None:
+    if entry_id is not None:
+        match_source = top.payload.get("source")
+        info: tuple[Any, Any, float] | None = None
+        if match_source == "synthetic":
+            from reference.synthetic import landmarks_for_entry
+
             info = landmarks_for_entry(entry_id)
-            if info is not None:
-                pro_landmarks, _, pro_fps = info
-                match_pose = pro_landmarks.tolist()
-                match_fps = pro_fps
+        elif match_source == "golfdb":
+            from reference.loader_golfdb import landmarks_for_entry as golfdb_landmarks
+
+            info = golfdb_landmarks(entry_id)
+        if info is not None:
+            pro_landmarks, _, pro_fps = info
+            match_pose = pro_landmarks.tolist()
+            match_fps = pro_fps
 
     response["match"] = {
         "point_id": str(top.point_id),

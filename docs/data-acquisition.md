@@ -28,19 +28,36 @@ This writes `backend/reference/manifest.jsonl` and (when
 ## Real-data upgrade path
 
 Real reference clips are a quality upgrade layered on top of the
-synthetic baseline. The loader stubs are in
-`backend/reference/loader_*.py`; each has the manual-acquisition
-steps documented in its docstring. The same `manifest.jsonl` shape
-flows through Qdrant identically once you wire the loader into
-`backend/reference/bootstrap.py:iter_rows()`.
+synthetic baseline. The same `manifest.jsonl` shape flows through
+Qdrant identically once a loader is wired into
+`backend/reference/bootstrap.py:iter_rows()`. When a real loader
+emits rows for a motion, the synthetic generator skips that motion
+automatically — so on a current-state machine, golf retrieval is
+**100% real** as soon as `scripts/download_golfdb.sh` has run.
 
-| Source | Motions covered | Data type | Loader |
-|---|---|---|---|
-| **Penn Action** | tennis_serve, golf_swing, bench_press, squat | RGB videos + 13-keypoint annotations | `loader_penn.py` |
-| **THETIS** | tennis serve / forehand / backhand | RGB + depth + 2D/3D skeleton | `loader_thetis.py` |
-| **GolfDB** | golf full swing | 1,400 clips, 8 ground-truth event labels | `loader_golfdb.py` |
-| **Fitness-AQA / FLEX** | barbell squat / bench press / bent-over row | RGB + skill-tier labels | `loader_fitness.py` |
-| **YouTube CC** | gap-filling (esp. bent-over row) | yt-dlp + Creative Commons filter | `loader_youtube.py` |
+| Source | Motions covered | Data type | Loader | Status |
+|---|---|---|---|---|
+| **GolfDB** | golf full swing | 1,400 clips, 8 ground-truth event labels (CC BY-NC 4.0) | `loader_golfdb.py` | **Wired** — auto-detected when `backend/reference/data/golfdb/` has metadata + at least one video |
+| **Penn Action** | tennis_serve, golf_swing, bench_press, squat | RGB videos + 13-keypoint annotations | `loader_penn.py` | Stub |
+| **THETIS** | tennis serve / forehand / backhand | RGB + depth + 2D/3D skeleton | `loader_thetis.py` | Stub |
+| **Fitness-AQA / FLEX** | barbell squat / bench press / bent-over row | RGB + skill-tier labels | `loader_fitness.py` | Stub |
+| **YouTube CC** | gap-filling (esp. bent-over row) | yt-dlp + Creative Commons filter | `loader_youtube.py` | Stub |
+
+### GolfDB
+
+```bash
+./scripts/download_golfdb.sh   # pulls metadata + MediaPipe model + a curated
+                               # subset of YouTube source videos (~10 videos,
+                               # yields ~50–80 swings after cropping)
+./scripts/build_library.sh     # rebuild manifest — synthetic golf is now
+                               # excluded automatically; only real GolfDB
+                               # rows are emitted for golf_swing
+```
+
+The 18 GB pre-cropped `videos_160.zip` artifact from the GolfDB README
+is also supported — drop it under
+`backend/reference/data/golfdb/videos_160/` and the loader will skip the
+in-loader cropping step. Either layout produces the same manifest rows.
 
 Each loader has a `iter_rows()` function that yields
 `{id, phase_tokens, payload}` dicts in the same shape the synthetic

@@ -22,8 +22,19 @@ cd "$(dirname "$0")/.."
 
 cd backend
 
-echo "==> Generating manifest (synthetic source)…"
-uv run python -m reference.bootstrap
+# When the GolfDB downloads have placed a local MediaPipe model at the
+# canonical location, point pose_extract at it so iter_rows() works
+# outside the Modal image (which bakes the same .task file at /opt).
+if [[ -z "${MEDIAPIPE_MODEL_PATH:-}" ]]; then
+  candidate="reference/data/golfdb/pose_landmarker_full.task"
+  if [[ -f "$candidate" ]]; then
+    export MEDIAPIPE_MODEL_PATH="$PWD/$candidate"
+    echo "==> Using local MediaPipe model at $MEDIAPIPE_MODEL_PATH"
+  fi
+fi
+
+echo "==> Generating manifest (source: ${MIMICCOACH_SOURCE:-all})…"
+uv run python -m reference.bootstrap --source "${MIMICCOACH_SOURCE:-all}"
 
 if [[ -n "${QDRANT_URL:-}" || -n "${QDRANT_PATH:-}" ]]; then
   echo "==> Seeding Qdrant…"
