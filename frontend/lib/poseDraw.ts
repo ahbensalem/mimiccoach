@@ -16,23 +16,36 @@ export interface DrawRect {
   h: number;
 }
 
-// MediaPipe Pose connections (subset that matters for sport motions).
+// MediaPipe Pose connections — body-only subset that matters for sport
+// motions. Face outline (nose↔eyes↔ears↔mouth) is intentionally excluded:
+// it's noisy on amateur uploads and synthetic generators leave those
+// landmarks zero-filled, which would draw spurious lines from the head
+// to the top-left corner of the canvas.
 const CONNECTIONS: ReadonlyArray<readonly [number, number]> = [
-  // Head outline
-  [0, 1], [1, 2], [2, 3], [3, 7],
-  [0, 4], [4, 5], [5, 6], [6, 8],
   // Torso
-  [11, 12],
-  [11, 23], [12, 24],
-  [23, 24],
+  [11, 12],            // shoulders
+  [11, 23], [12, 24],  // shoulders → hips
+  [23, 24],            // hips
   // Left arm
-  [11, 13], [13, 15], [15, 17], [15, 19], [15, 21], [17, 19],
+  [11, 13], [13, 15],
   // Right arm
-  [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20],
+  [12, 14], [14, 16],
   // Left leg
-  [23, 25], [25, 27], [27, 29], [27, 31], [29, 31],
+  [23, 25], [25, 27], [27, 31],
   // Right leg
-  [24, 26], [26, 28], [28, 30], [28, 32], [30, 32],
+  [24, 26], [26, 28], [28, 32],
+];
+
+// Joint indices we actually want to mark with a dot. Face landmarks (0-10)
+// and finger landmarks (17-22) are skipped — too cluttered.
+const KEY_JOINTS: ReadonlyArray<number> = [
+  11, 12,                // shoulders
+  13, 14,                // elbows
+  15, 16,                // wrists
+  23, 24,                // hips
+  25, 26,                // knees
+  27, 28,                // ankles
+  31, 32,                // feet
 ];
 
 const PHASE_COLORS = [
@@ -102,18 +115,29 @@ export function getSkeletonOnlyRect(
   return { x: (outerW - w) / 2, y: 0, w, h };
 }
 
+export interface DrawPoseOptions {
+  color?: string;
+  minVisibility?: number;
+  lineWidth?: number;
+  jointRadius?: number;
+  alpha?: number;
+}
+
 export function drawPose(
   ctx: CanvasRenderingContext2D,
   pose: Pose,
   rect: DrawRect,
-  options: { color?: string; minVisibility?: number; lineWidth?: number; jointRadius?: number } = {},
+  options: DrawPoseOptions = {},
 ): void {
   const { x, y, w, h } = rect;
   const color = options.color ?? "#dc2626";
   const minVis = options.minVisibility ?? 0.4;
-  const lineWidth = options.lineWidth ?? 3;
-  const jointRadius = options.jointRadius ?? 4;
+  const lineWidth = options.lineWidth ?? 2;
+  const jointRadius = options.jointRadius ?? 2.5;
+  const alpha = options.alpha ?? 0.95;
 
+  ctx.save();
+  ctx.globalAlpha = alpha;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
@@ -131,13 +155,16 @@ export function drawPose(
     ctx.stroke();
   }
 
-  // Joints
+  // Joints — only the body-anatomy subset, skip face + fingers
   ctx.fillStyle = color;
-  for (const lm of pose) {
+  for (const idx of KEY_JOINTS) {
+    const lm = pose[idx];
     if (!lm) continue;
     if ((lm[3] ?? 1) < minVis) continue;
     ctx.beginPath();
     ctx.arc(x + lm[0] * w, y + lm[1] * h, jointRadius, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  ctx.restore();
 }

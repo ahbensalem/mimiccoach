@@ -22,6 +22,11 @@ interface Props {
   /** Returns current time in seconds (for the *pose array's* clock).
    *  When omitted, uses videoRef.current.currentTime. */
   currentTimeFn?: () => number;
+  /** Visual style — defaults are tuned for video-overlay (subtle); pass
+   *  larger values for skeleton-only panels (e.g. the synthetic pro side). */
+  lineWidth?: number;
+  jointRadius?: number;
+  alpha?: number;
   className?: string;
 }
 
@@ -37,6 +42,9 @@ export function SkeletonCanvas({
   containerRef,
   videoRef,
   currentTimeFn,
+  lineWidth,
+  jointRadius,
+  alpha,
   className,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -94,7 +102,12 @@ export function SkeletonCanvas({
           : getSkeletonOnlyRect(cssW, cssH);
         const pi = phases.length ? frameToPhaseIndex(frameIdx) : 0;
         const color = phases.length ? colorForPhase(pi, phases.length) : "#dc2626";
-        drawPose(ctx, pose, rect, { color, lineWidth: 4, jointRadius: 5 });
+        drawPose(ctx, pose, rect, {
+          color,
+          lineWidth: lineWidth ?? 2,
+          jointRadius: jointRadius ?? 2.5,
+          alpha: alpha ?? 0.9,
+        });
       }
 
       rafRef.current = requestAnimationFrame(loop);
@@ -104,7 +117,7 @@ export function SkeletonCanvas({
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, [poses, fps, phases, containerRef, videoRef, currentTimeFn]);
+  }, [poses, fps, phases, containerRef, videoRef, currentTimeFn, lineWidth, jointRadius, alpha]);
 
   return (
     <canvas

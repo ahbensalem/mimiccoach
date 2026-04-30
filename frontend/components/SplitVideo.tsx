@@ -112,6 +112,9 @@ export function SplitVideo({ user, pro }: { user: Side; pro: Side }) {
                 phases={user.phases}
                 containerRef={userPanelRef}
                 videoRef={userRef}
+                lineWidth={2}
+                jointRadius={2.5}
+                alpha={0.85}
               />
             ) : null}
           </div>
@@ -149,6 +152,9 @@ export function SplitVideo({ user, pro }: { user: Side; pro: Side }) {
                   phases={pro.phases}
                   containerRef={proPanelRef}
                   videoRef={proRef}
+                  lineWidth={2}
+                  jointRadius={2.5}
+                  alpha={0.85}
                 />
               ) : (
                 <SkeletonCanvas
@@ -157,6 +163,9 @@ export function SplitVideo({ user, pro }: { user: Side; pro: Side }) {
                   phases={pro.phases}
                   containerRef={proPanelRef}
                   currentTimeFn={proCurrentTime}
+                  lineWidth={3}
+                  jointRadius={3.5}
+                  alpha={1.0}
                 />
               )
             ) : null}

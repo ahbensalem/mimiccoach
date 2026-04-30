@@ -108,22 +108,58 @@ def _arc(t: np.ndarray, start: int, end: int, amplitude: float) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 def _tennis_serve(body: BodyTemplate, T: int, *, skill: float, rng: np.random.Generator) -> np.ndarray:
-    """skill ∈ [0, 1]: 0 = sloppy beginner, 1 = polished pro."""
+    """skill ∈ [0, 1]: 0 = sloppy beginner, 1 = polished pro.
+
+    Full-body coordination model:
+      * 0.15–0.45 (toss): left arm rises (elbow follows the wrist)
+      * 0.30–0.65 (loading): knees flex, hips drop slightly, right shoulder
+        rotates up, right elbow cocks back into trophy
+      * 0.55–0.92 (contact): right arm extends explosively, knees rebound
+      * 0.85–1.00 (follow-through): right arm crosses to the opposite side
+    """
     clip = np.tile(_base_pose(body), (T, 1, 1))
     t = np.arange(T)
-    jitter = (1.0 - skill) * 0.02
+    jitter = (1.0 - skill) * 0.015
+    j = rng.uniform(-0.015, 0.015)
 
-    # Toss: left wrist rises early
-    toss_amp = 0.18 + 0.04 * skill + rng.uniform(-0.02, 0.02)
-    clip[:, MP_INDEX["left_wrist"], 1] += -_arc(t, int(T * 0.15), int(T * 0.45), toss_amp)
+    # --- Toss: non-dominant arm rises ---
+    toss_amp = 0.20 + 0.04 * skill + j
+    toss = -_arc(t, int(T * 0.12), int(T * 0.45), toss_amp)
+    clip[:, MP_INDEX["left_wrist"], 1] += toss
+    clip[:, MP_INDEX["left_elbow"], 1] += toss * 0.55
 
-    # Trophy: right elbow lifts
-    elbow_amp = 0.12 + 0.06 * skill
-    clip[:, MP_INDEX["right_elbow"], 1] += -_arc(t, int(T * 0.40), int(T * 0.65), elbow_amp)
+    # --- Knee bend (loading) ---
+    knee_amp = 0.06 + 0.02 * skill
+    knee_drop = _arc(t, int(T * 0.30), int(T * 0.62), knee_amp)
+    for j_name in ("left_knee", "right_knee"):
+        clip[:, MP_INDEX[j_name], 1] += knee_drop
+    # Hips dip a little less than knees (preserves pelvis stability)
+    hip_drop = _arc(t, int(T * 0.30), int(T * 0.62), knee_amp * 0.5)
+    for j_name in ("left_hip", "right_hip"):
+        clip[:, MP_INDEX[j_name], 1] += hip_drop
 
-    # Contact: right wrist peaks
-    contact_amp = 0.22 + 0.10 * skill
-    clip[:, MP_INDEX["right_wrist"], 1] += -_arc(t, int(T * 0.55), int(T * 0.92), contact_amp)
+    # --- Shoulder rotation (right shoulder lifts during trophy/contact) ---
+    sho_amp = 0.04 + 0.02 * skill
+    clip[:, MP_INDEX["right_shoulder"], 1] += -_arc(t, int(T * 0.30), int(T * 0.75), sho_amp)
+    # Left shoulder slightly drops as the body opens
+    clip[:, MP_INDEX["left_shoulder"], 1] += _arc(t, int(T * 0.45), int(T * 0.85), sho_amp * 0.5)
+
+    # --- Trophy: right elbow cocks high; right wrist drops behind ---
+    trophy_amp = 0.14 + 0.05 * skill
+    clip[:, MP_INDEX["right_elbow"], 1] += -_arc(t, int(T * 0.32), int(T * 0.65), trophy_amp)
+    # Right wrist briefly goes back/behind (negative x for right-handed)
+    clip[:, MP_INDEX["right_wrist"], 0] += -_arc(t, int(T * 0.40), int(T * 0.62), 0.04)
+
+    # --- Contact: right arm explodes up ---
+    contact_amp = 0.28 + 0.08 * skill
+    contact_rise = -_arc(t, int(T * 0.55), int(T * 0.92), contact_amp)
+    clip[:, MP_INDEX["right_wrist"], 1] += contact_rise
+    clip[:, MP_INDEX["right_elbow"], 1] += contact_rise * 0.55
+
+    # --- Follow-through: right wrist crosses body to the left side ---
+    cross_amp = 0.22 + 0.05 * skill
+    clip[:, MP_INDEX["right_wrist"], 0] += -_arc(t, int(T * 0.78), T - 1, cross_amp)
+    clip[:, MP_INDEX["right_wrist"], 1] += _arc(t, int(T * 0.85), T - 1, 0.10)
 
     if jitter > 0:
         clip[..., :3] += rng.normal(0, jitter, size=clip[..., :3].shape).astype(np.float32)
