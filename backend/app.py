@@ -63,7 +63,16 @@ image = (
         "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
         "pose_landmarker_full/float16/latest/pose_landmarker_full.task"
     )
-    .env({"MEDIAPIPE_MODEL_PATH": "/opt/pose_landmarker.task"})
+    .env(
+        {
+            "MEDIAPIPE_MODEL_PATH": "/opt/pose_landmarker.task",
+            # loader_golfdb.landmarks_for_entry() reads pose_cache/{id}.npz from
+            # this root so the live overlay can show the matched pro's skeleton
+            # for golfdb matches. The dir is mounted below from the local
+            # build_library.sh output.
+            "MIMICCOACH_GOLFDB_ROOT": "/root/golfdb_data",
+        }
+    )
     .add_local_python_source("pipeline", "qdrant_io", "reference")
     # add_local_python_source ships .py files only; motions.yaml is a sibling
     # data file segment.py reads at request time, so add it explicitly.
@@ -72,6 +81,19 @@ image = (
         "/root/pipeline/motions.yaml",
     )
 )
+
+# Per-clip pose .npz files for the GolfDB reference rows. Built locally by
+# scripts/build_library.sh; gitignored, so this is conditional — if the
+# dir isn't on disk (fresh checkout, CI, etc.), the image still builds and
+# golf matches gracefully degrade to no pro skeleton overlay (the path
+# `/root/golfdb_data/pose_cache/{id}.npz` simply won't exist and
+# landmarks_for_entry returns None). Bundle is ~10 MB at 75 clips today.
+_POSE_CACHE_DIR = Path(__file__).parent / "reference" / "data" / "golfdb" / "pose_cache"
+if _POSE_CACHE_DIR.is_dir() and any(_POSE_CACHE_DIR.iterdir()):
+    image = image.add_local_dir(
+        str(_POSE_CACHE_DIR),
+        "/root/golfdb_data/pose_cache",
+    )
 
 app = modal.App("mimiccoach", image=image)
 
