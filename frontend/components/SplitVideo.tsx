@@ -32,6 +32,13 @@ export function SplitVideo({ user, pro }: { user: Side; pro: Side }) {
 
   // Sync the pro <video> (when present) to the user's progress fraction so
   // clips of different lengths still phase-line up.
+  //
+  // user.videoUrl in deps because the <video> mounts conditionally on it —
+  // empty deps would race the URL.createObjectURL effect upstream and we'd
+  // bind to a null ref. (This breaks scrubber/duration React state and the
+  // pro-side skeleton, which reads userTimeRef; the user-side skeleton
+  // happens to keep working because its RAF loop reads videoRef.current
+  // .currentTime directly.)
   useEffect(() => {
     const u = userRef.current;
     if (!u) return;
@@ -47,11 +54,12 @@ export function SplitVideo({ user, pro }: { user: Side; pro: Side }) {
     const onMeta = () => setDuration(Math.max(0.01, u.duration || 0.01));
     u.addEventListener("timeupdate", onTime);
     u.addEventListener("loadedmetadata", onMeta);
+    if (u.duration > 0) onMeta();
     return () => {
       u.removeEventListener("timeupdate", onTime);
       u.removeEventListener("loadedmetadata", onMeta);
     };
-  }, []);
+  }, [user.videoUrl]);
 
   useEffect(() => {
     const u = userRef.current;
@@ -65,7 +73,7 @@ export function SplitVideo({ user, pro }: { user: Side; pro: Side }) {
       u.removeEventListener("play", onPlay);
       u.removeEventListener("pause", onPause);
     };
-  }, []);
+  }, [user.videoUrl, pro.videoUrl]);
 
   function scrubTo(value: number) {
     const u = userRef.current;
@@ -74,16 +82,16 @@ export function SplitVideo({ user, pro }: { user: Side; pro: Side }) {
 
   // Pro-side clock: maps the user's progress to a time inside the pro pose
   // array's own duration, so the pro skeleton animates in sync without a
-  // pro video element.
+  // pro video element. Reads from userRef.current at call time (rather than
+  // React state) so the RAF loop stays correct even on the first render
+  // before the timeupdate listener has bound.
   const proDuration = pro.poses ? pro.poses.length / Math.max(1, pro.fps) : 0;
-  const userDurationRef = useRef(duration);
-  userDurationRef.current = duration;
-  const userTimeRef = useRef(t);
-  userTimeRef.current = t;
   function proCurrentTime(): number {
-    const ud = userDurationRef.current;
-    const ut = userTimeRef.current;
-    if (ud <= 0 || proDuration <= 0) return 0;
+    const u = userRef.current;
+    if (!u || proDuration <= 0) return 0;
+    const ud = u.duration || 0;
+    const ut = u.currentTime || 0;
+    if (ud <= 0) return 0;
     return Math.min(proDuration - 0.001, (ut / ud) * proDuration);
   }
 
