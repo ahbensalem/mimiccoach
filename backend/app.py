@@ -34,7 +34,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("ffmpeg", "libgl1", "libglib2.0-0", "curl")
+    .apt_install(
+        "ffmpeg",
+        "libgl1",
+        "libglib2.0-0",
+        "libgles2",      # libGLESv2.so.2 — required by mediapipe Tasks API
+        "libegl1",       # libEGL.so.1
+        "curl",
+    )
     .pip_install(
         "mediapipe>=0.10.18",
         "numpy>=1.26,<2.2",
