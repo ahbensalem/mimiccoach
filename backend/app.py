@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -216,6 +217,37 @@ def landmarks_to_pose_payload(landmarks) -> list[list[list[float]]]:
     return arr  # type: ignore[no-any-return]
 
 
+def normalize_upload(src: Path) -> Path:
+    """Re-encode an uploaded video to H.264 + 30 fps so cv2 can read it.
+
+    Modern phones (recent iPhones, some Androids) default to HEVC or AV1.
+    OpenCV's bundled ffmpeg lacks AV1 support; the system ffmpeg apt-
+    installed in the Modal image does. Routing every upload through
+    `ffmpeg` here normalizes input format, caps resolution at 1280px wide,
+    fixes the frame rate at 30 fps, and drops audio.
+
+    Returns the path to the normalized clip (a sibling of `src`).
+    """
+    dst = src.with_name(f"{src.stem}.norm.mp4")
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-i", str(src),
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-crf", "23",
+        "-vf", "scale='min(1280,iw)':-2,fps=30",
+        "-an",                       # drop audio
+        "-movflags", "+faststart",
+        str(dst),
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, timeout=60)
+    except subprocess.CalledProcessError as e:
+        tail = (e.stderr or b"").decode("utf-8", errors="replace")[-500:]
+        raise RuntimeError(f"ffmpeg failed to normalize upload: {tail}") from e
+    return dst
+
+
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
@@ -296,11 +328,20 @@ def fastapi_app():
         try:
             from pipeline.pose_extract import PoseExtractor
 
+            # Normalize codec/fps/resolution so cv2 can decode regardless of
+            # whatever the phone uploaded (HEVC, AV1, weird wrapper, etc.).
+            try:
+                normalized_path = normalize_upload(tmp_path)
+            except RuntimeError as e:
+                raise HTTPException(415, str(e)) from e
+
             extractor = PoseExtractor()
             try:
-                landmarks, meta = extractor.extract(tmp_path)
+                landmarks, meta = extractor.extract(normalized_path)
             finally:
                 extractor.close()
+                with contextlib.suppress(OSError):
+                    normalized_path.unlink()
 
             result = analyze_from_landmarks(
                 landmarks,
